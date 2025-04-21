@@ -1,0 +1,81 @@
+`timescale 1ns / 1ps
+
+module uart_tb;
+
+    reg clk = 0;
+    reg rst = 1;
+    reg start = 0;
+    reg [7:0] data_in;
+    wire tx;
+    wire busy;
+    wire [7:0] data_out;
+    wire valid;
+
+    wire rx = tx; // Loopback for TX -> RX
+
+    parameter CLK_FREQ = 50000000;
+    parameter BAUD_RATE = 9600;
+
+    // Instantiate Transmitter
+    uart_tx #(.CLK_FREQ(CLK_FREQ), .BAUD_RATE(BAUD_RATE)) uart_tx_inst (
+        .clk(clk),
+        .rst(rst),
+        .start(start),
+        .data_in(data_in),
+        .tx(tx),
+        .busy(busy)
+    );
+
+    // Instantiate Receiver
+    uart_rx #(.CLK_FREQ(CLK_FREQ), .BAUD_RATE(BAUD_RATE)) uart_rx_inst (
+        .clk(clk),
+        .rst(rst),
+        .rx(rx),
+        .data_out(data_out),
+        .valid(valid)
+    );
+
+    // Clock generation: 50MHz
+    always #10 clk = ~clk;
+
+    // Test sequence
+    reg [7:0] test_data [0:4];
+    integer i;
+    integer passed = 0;
+
+    initial begin
+        $dumpfile("uart_test.vcd");
+        $dumpvars(0, uart_tb);
+
+        // Data to test
+        test_data[0] = 8'h55;
+        test_data[1] = 8'hA5;
+        test_data[2] = 8'hF0;
+        test_data[3] = 8'h0F;
+        test_data[4] = 8'h3C;
+
+        // Reset
+        #100;
+        rst = 0;
+        #100;
+
+        for (i = 0; i < 5; i = i + 1) begin
+            data_in = test_data[i];
+            start = 1; #20; start = 0;
+
+            // Wait for valid signal
+            wait (valid == 1);
+            #20;
+            if (data_out === test_data[i]) begin
+                $display(" Test %0d: Sent = %h, Received = %h [MATCH]", i+1, test_data[i], data_out);
+                passed = passed + 1;
+            end else begin
+                $display(" Test %0d: Sent = %h, Received = %h [MISMATCH]", i+1, test_data[i], data_out);
+            end
+            #100000; // Wait between bytes (~1ms for 9600 baud)
+        end
+
+        $display("✔️ UART Test Done: %0d / 5 Passed", passed);
+        $finish;
+    end
+endmodule
